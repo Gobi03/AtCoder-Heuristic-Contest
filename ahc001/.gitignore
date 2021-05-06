@@ -1,0 +1,12 @@
+/target
+Cargo.lock
+
+/tools/**/*.txt
+/tools/*.in
+/tools/*.out
+/tools/*.svg
+/tools/*.md
+/tools/*.html
+/tools/Cargo.toml
+/tools/src/bin/*
+!/tools/src/bin/my_vis.rs
