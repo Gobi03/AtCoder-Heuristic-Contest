@@ -27,11 +27,15 @@ const DIRS: [char; 4] = ['F', 'B', 'L', 'R'];
 const DIJ: [(usize, usize); 4] = [(1, 0), (0, 1), (!0, 0), (0, !0)];
 
 const LAST_SEARCH_TURN: usize = 93;
+const SINGLE_PLAYOUT_NUM: usize = 130;
 
 struct Input {
-    fs: Vec<usize>,
-    candy_nums: Vec<usize>,
-    ps: Vec<usize>,
+    fs: Vec<usize>,         // i番目に置かれるキャンディの種類
+    candy_nums: Vec<usize>, // キャンディの種類ごとの個数
+    ps: Vec<usize>,         // 置かれる位置
+
+    candy1: usize, // 数が１番多いキャンディ
+    candy2: usize, // その他から乱択
 }
 impl Input {
     fn new(f: Vec<usize>) -> Self {
@@ -40,11 +44,21 @@ impl Input {
             candy_nums[*e] += 1;
         }
 
-        Self {
+        let mut input = Self {
             fs: f,
             candy_nums,
             ps: vec![],
-        }
+
+            candy1: 0,
+            candy2: 0,
+        };
+
+        let candy1 = input.max_num_candy();
+        let candy2 = (candy1 % CANDY_KIND) + 1;
+        input.candy1 = candy1;
+        input.candy2 = candy2;
+
+        input
     }
 
     // 一番数が多いキャンディの種類番号を返す
@@ -76,7 +90,7 @@ fn simulate(st: &State, input: &Input) -> char {
 
     for &dir in &DIRS {
         let mut next_st = st.clone();
-        next_st.apply_move(dir);
+        let _ = next_st.apply_move(dir);
 
         let hoge = simulate_put(next_st, input);
         if hoge > best {
@@ -241,9 +255,50 @@ impl State {
     }
 }
 
+fn play(ti: usize, ok_flag: &mut bool, input: &Input) -> char {
+    if ti == TURN - 1 {
+        'R'
+    } else {
+        if input.fs[ti + 1] == input.candy1 {
+            *ok_flag = false;
+            'L'
+        } else {
+            if !(*ok_flag) {
+                *ok_flag = true;
+                'R'
+            }
+            // 上下動させる
+            else if input.fs[ti + 1] == input.candy2 {
+                'F'
+            } else {
+                'B'
+            }
+        }
+    }
+}
+
+// プレイアウトしたスコアを返す
+// ti: turn - 1
+fn playout(mut ti: usize, mut st: State, play_list: &Vec<char>, input: &Input) -> usize {
+    let mut rng = thread_rng();
+
+    while ti < TURN {
+        let point = rng.gen_range(1, TURN - ti + 1);
+
+        st.apply_put(point, input);
+
+        let c = play_list[ti];
+
+        let _ = st.apply_move(c);
+
+        ti += 1;
+    }
+
+    st.compute_score()
+}
+
 fn main() {
     let system_time = SystemTime::now();
-    let mut _rng = thread_rng();
 
     // tool
     let (r, w) = (std::io::stdin(), std::io::stdout());
@@ -256,11 +311,12 @@ fn main() {
     let mut st = State::new();
 
     /* action */
-    // 右に寄せる対象
-    let target_candy = input.max_num_candy();
-    let second = (target_candy % CANDY_KIND) + 1;
-    let _third = (second % CANDY_KIND) + 1;
+    let mut play_list = vec![];
     let mut ok_flag = true; // 上下動しても良し
+    for i in 0..TURN {
+        let c = play(i, &mut ok_flag, &input);
+        play_list.push(c);
+    }
 
     for ti in 0..TURN {
         let p: usize = sc.read();
@@ -269,21 +325,26 @@ fn main() {
         st.apply_put(p, &input);
 
         let ans = if ti <= LAST_SEARCH_TURN {
-            if input.fs[ti + 1] == target_candy {
-                ok_flag = false;
-                'L'
-            } else {
-                if !ok_flag {
-                    ok_flag = true;
-                    'R'
+            let mut best = 0.0;
+            let mut best_ans = '0';
+            for &dir in &DIRS {
+                let mut tmp_st = st.clone();
+                let _ = tmp_st.apply_move(dir);
+
+                let mut sum = 0.0;
+                for _ in 0..SINGLE_PLAYOUT_NUM {
+                    let score = playout(ti + 1, tmp_st.clone(), &play_list, &input) as f64;
+                    sum += score;
                 }
-                // 上下動させる
-                else if input.fs[ti + 1] == second {
-                    'F'
-                } else {
-                    'B'
+
+                let avg = sum / SINGLE_PLAYOUT_NUM as f64;
+                if avg > best {
+                    best = avg;
+                    best_ans = dir;
                 }
             }
+
+            best_ans
         }
         // なに返しても一緒
         else if ti == TURN - 1 {
